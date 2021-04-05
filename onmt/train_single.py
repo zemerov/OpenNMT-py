@@ -56,7 +56,7 @@ def main(opt, fields, transforms_cls, checkpoint, device_id,
     """Start training on `device_id`."""
     # NOTE: It's important that ``opt`` has been validated and updated
     # at this point.
-    configure_process(opt, device_id)
+    configure_process(opt, device_id)  # Set an appropriate device id
     init_logger(opt.log_file)
 
     model_opt = _get_model_opts(opt, checkpoint=checkpoint)

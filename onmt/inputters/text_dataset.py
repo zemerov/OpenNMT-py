@@ -113,8 +113,10 @@ class TextMultiField(RawField):
         """
 
         # batch (list(list(list))): batch_size x len(self.fields) x seq_len
-        batch_by_feat = list(zip(*batch))
-        base_data = self.base_field.process(batch_by_feat[0], device=device)
+        batch_by_feat = list(zip(*batch))  # Text
+
+        base_data = self.base_field.process(batch_by_feat[0], device=device)  # Tensor of indexes
+
         if self.base_field.include_lengths:
             # lengths: batch_size
             base_data, lengths = base_data

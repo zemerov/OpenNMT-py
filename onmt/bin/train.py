@@ -100,7 +100,7 @@ def train(opt):
 
     set_random_seed(opt.seed, False)
 
-    checkpoint, fields, transforms_cls = _init_train(opt)
+    checkpoint, fields, transforms_cls = _init_train(opt)  # Datasets and transformations (Both dicts)
     train_process = partial(
         single_main,
         fields=fields,
@@ -151,6 +151,7 @@ def train(opt):
             p.terminate()
 
     elif nb_gpu == 1:  # case 1 GPU only
+        # TODO make possible for custom GPU id. Also replace assert at utils/parse.py line 275
         train_process(opt, device_id=0)
     else:   # case only CPU
         train_process(opt, device_id=-1)

@@ -170,7 +170,8 @@ class DynamicDatasetIter(object):
         if self.init_iterators is False:
             self._init_datasets()
         for bucket in self._bucketing():
-            dataset = self.dataset_adapter(bucket)
+            # Bucket contains various raw tests array of words
+            dataset = self.dataset_adapter(bucket)  # performs some transformations to the bucket
             train_iter = OrderedIterator(
                 dataset,
                 self.batch_size,
@@ -185,7 +186,7 @@ class DynamicDatasetIter(object):
                 repeat=False,
             )
             for batch in train_iter:
-                yield batch
+                yield batch  # SRC TGT INDEX Torch tensors
 
 
 def build_dynamic_dataset_iter(fields, transforms_cls, opts, is_train=True,

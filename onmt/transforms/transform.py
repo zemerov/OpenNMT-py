@@ -217,8 +217,8 @@ def make_transforms(opts, transforms_cls, fields):
     vocabs = get_vocabs(fields) if fields is not None else None
     transforms = {}
     for name, transform_cls in transforms_cls.items():
-        transform_obj = transform_cls(opts)
-        transform_obj.warm_up(vocabs)
+        transform_obj = transform_cls(opts)  # Create an object of transform_cls class
+        transform_obj.warm_up(vocabs)  # Load models, make initializations and other staff
         transforms[name] = transform_obj
     return transforms
 

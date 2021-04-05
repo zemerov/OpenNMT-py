@@ -220,9 +220,10 @@ class Trainer(object):
         total_stats = onmt.utils.Statistics()
         report_stats = onmt.utils.Statistics()
         self._start_report_manager(start_time=total_stats.start_time)
+        print("TRAINING STARTED")
 
         for i, (batches, normalization) in enumerate(
-                self._accum_batches(train_iter)):
+                self._accum_batches(train_iter)):  #Loading dataset here
             step = self.optim.training_step
             # UPDATE DROPOUT
             self._maybe_update_dropout(step)
@@ -241,7 +242,7 @@ class Trainer(object):
 
             self._gradient_accumulation(
                 batches, normalization, total_stats,
-                report_stats)
+                report_stats)  # Forward and backward pass
 
             if self.average_decay > 0 and i % self.average_every == 0:
                 self._update_average(step)

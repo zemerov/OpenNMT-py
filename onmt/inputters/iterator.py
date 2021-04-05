@@ -107,7 +107,7 @@ class OrderedIterator(torchtext.data.Iterator):
         """
         while True:
             self.init_epoch()
-            for idx, minibatch in enumerate(self.batches):
+            for idx, minibatch in enumerate(self.batches):  # minibatch is a list of torchtext.data.example.Example
                 # fast-forward if loaded from state
                 if self._iterations_this_epoch > idx:
                     continue
@@ -124,7 +124,10 @@ class OrderedIterator(torchtext.data.Iterator):
                 if self.yield_raw_example:
                     yield minibatch[0]
                 else:
-                    yield torchtext.data.Batch(
+                    # Apply onmt.inputters.text_dataset.TextMultiField process function for all examples
+                    # link to source code https://pytorch.org/text/_modules/torchtext/data/batch.html
+                    # Each object in minibatch has attributes 'src', 'tgt', 'indices'. Here is already tokenized data
+                    yield torchtext.data.Batch(  # Suppose here only transfering to tensor happens
                         minibatch,
                         self.dataset,
                         self.device)

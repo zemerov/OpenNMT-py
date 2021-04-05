@@ -67,7 +67,7 @@ class DatasetAdapter(object):
         # this is a hack: appears quicker to apply it here
         # than in the ParallelCorpusIterator
         maybe_example = transform.apply(
-            example, is_train=is_train, corpus_name=cid)
+            example, is_train=is_train, corpus_name=cid)  # BPE tokenization happens here!!!
         if maybe_example is None:
             return None
         maybe_example['src'] = ' '.join(maybe_example['src'])
@@ -204,6 +204,7 @@ class ParallelCorpusIterator(object):
             # item = self.transform.apply(
             # example, is_train=self.infinitely, corpus_name=self.cid)
             item = (example, self.transform, self.cid)
+            # Example is a dict of src and tgt lists of words devided by space
             if item is not None:
                 yield item
         report_msg = self.transform.stats()
