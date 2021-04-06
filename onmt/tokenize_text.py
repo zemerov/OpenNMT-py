@@ -1,5 +1,6 @@
 import onmt.transforms.bpe as bpe
 import argparse
+from tqdm import tqdm
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--file', type=str, required=True)
@@ -18,7 +19,7 @@ if __name__ == "__main__":
     target_name = opts.target if opts.target is not None else opts.file + '.tok'
 
     with open(target_name, encoding='utf-8', mode='w') as file:
-        for line in lines:
+        for line in tqdm(lines):
             tokenized_line, _ = bpe.tokenize_text(merge_table, line.split())
             file.write(' '.join(tokenized_line) + '\n')
 
