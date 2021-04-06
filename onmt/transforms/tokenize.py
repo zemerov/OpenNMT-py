@@ -2,6 +2,7 @@
 from onmt.utils.logging import logger
 from onmt.transforms import register_transform
 from .transform import Transform
+from .bpe import *
 
 
 class TokenizerTransform(Transform):
@@ -69,6 +70,14 @@ class TokenizerTransform(Transform):
                   type=int, default=0,
                   help="Only produce tgt subword in tgt_subword_vocab with "
                   " frequency >= tgt_vocab_threshold.")
+
+        # custom options
+        group.add('-src_merge_table', '--src_merge_table',
+                  type=str, default=None,
+                  help="Path to subword-nmt merge table for source language")
+        group.add('-tgt_merge_table', '--tgt_merge_table',
+                  type=str, default=None,
+                  help="Path to subword-nmt merge table for target language")
 
     @classmethod
     def _validate_options(cls, opts):
@@ -186,6 +195,69 @@ class SentencePieceTransform(TokenizerTransform):
         return kwargs_str + ', ' + additional_str
 
 
+@register_transform(name='bpe-dropout')
+class BpeDropoutTransform(TokenizerTransform):
+    """BPE dropout subword transform class."""
+
+    def __init__(self, opts):
+        """Initialize necessary options for bpe-dropout."""
+        super().__init__(opts)
+        self.src_table = None
+        self.tgt_table = None
+
+    def _set_seed(self, seed):
+        """set seed to ensure reproducibility."""
+        # TODO support reproducibility
+        pass
+
+    def warm_up(self, vocabs=None):
+        """Load subword models. Merge table should be specified"""
+        super().warm_up(None)
+
+        # Some useful check
+        assert self.opts.src_merge_table is not None, "Please specify path to src_merge_table"
+        assert self.opts.tgt_merge_table is not None, "Please specify path to tgt_merge_table"
+        assert not self.share_vocab, "Shared vocab is not supported for bpe-dropout"
+
+        src_table = load_subword_nmt_table(self.opts.src_merge_table)
+        tgt_table = load_subword_nmt_table(self.opts.tgt_merge_table)  # Dict of merges with priorities
+
+        self.tables = {
+            'src': src_table,
+            'tgt': tgt_table
+        }
+
+    def _tokenize(self, tokens, side='src', is_train=False):
+        """
+        Do sentencepiece subword tokenize.
+        :params tokens: list of str - list of words for tokenization
+        """
+
+        # TODO make support for merge indexes
+        segmented, _ = tokenize_text(self.tables[side], tokens)
+        return segmented
+
+    def apply(self, example, is_train=False, stats=None, merge_tables=None, **kwargs):
+        """Apply sentencepiece subword encode to src & tgt."""
+        src_out = self._tokenize(example['src'], 'src', is_train)
+        tgt_out = self._tokenize(example['tgt'], 'tgt', is_train)
+
+        if stats is not None:
+            n_words = len(example['src']) + len(example['tgt'])
+            n_subwords = len(src_out) + len(tgt_out)
+            stats.subword(n_subwords, n_words)
+        example['src'], example['tgt'] = src_out, tgt_out
+        return example
+
+    def _repr_args(self):
+        """Return str represent key arguments for class."""
+        kwargs_str = super()._repr_args()
+        additional_str = 'src_subword_nbest={}, tgt_subword_nbest={}'.format(
+            self.src_subword_nbest, self.tgt_subword_nbest
+        )
+        return kwargs_str + ', ' + additional_str
+
+
 @register_transform(name='bpe')
 class BPETransform(TokenizerTransform):
     """subword_nmt: official BPE subword transform class."""
@@ -272,12 +344,12 @@ class ONMTTokenizerTransform(TokenizerTransform):
         group = parser.add_argument_group('Transform/Subword/ONMTTOK')
         group.add('-src_subword_type', '--src_subword_type',
                   type=str, default='none',
-                  choices=['none', 'sentencepiece', 'bpe'],
+                  choices=['none', 'sentencepiece', 'bpe', 'bpe-dropout'],
                   help="Type of subword model for src (or shared) "
                        "in pyonmttok.")
         group.add('-tgt_subword_type', '--tgt_subword_type',
                   type=str, default='none',
-                  choices=['none', 'sentencepiece', 'bpe'],
+                  choices=['none', 'sentencepiece', 'bpe', 'bpe-dropout'],
                   help="Type of subword model for tgt in  pyonmttok.")
         group.add('-src_onmttok_kwargs', '--src_onmttok_kwargs', type=str,
                   default="{'mode': 'none'}",
