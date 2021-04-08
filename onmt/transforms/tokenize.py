@@ -79,6 +79,19 @@ class TokenizerTransform(Transform):
                   type=str, default=None,
                   help="Path to subword-nmt merge table for target language")
 
+        # variational arguments
+        group.add('-variational', '--variational',
+                  type=bool, default=False,
+                  help="Variational or usual bpe training")
+
+        group.add('-only_src', '--only_src',
+                  type=bool, default=False,
+                  help="Apply dropout only for src text or for both")
+
+        group.add('-variational_lr', '--variational_lr',
+                  type=float, default=1e-3,
+                  help="Learning rate for variational model optimizer")
+
     @classmethod
     def _validate_options(cls, opts):
         """Extra checks for Subword options."""
@@ -202,8 +215,7 @@ class BpeDropoutTransform(TokenizerTransform):
     def __init__(self, opts):
         """Initialize necessary options for bpe-dropout."""
         super().__init__(opts)
-        self.src_table = None
-        self.tgt_table = None
+        self.tables = None
 
     def _set_seed(self, seed):
         """set seed to ensure reproducibility."""
@@ -227,20 +239,20 @@ class BpeDropoutTransform(TokenizerTransform):
             'tgt': tgt_table
         }
 
-    def _tokenize(self, tokens, side='src', is_train=False):
+    def _tokenize(self, tokens, side='src', is_train=False, dropout_table=None):
         """
         Do sentencepiece subword tokenize.
         :params tokens: list of str - list of words for tokenization
         """
 
-        # TODO make support for merge indexes
-        segmented, _ = tokenize_text(self.tables[side], tokens)
-        return segmented
+        # TODO make support for merge indexes and custom alpha rate
+        segmented, used_merges = tokenize_text(self.tables[side], tokens, dropout_table=dropout_table)
+        return segmented, used_merges
 
     def apply(self, example, is_train=False, stats=None, merge_tables=None, **kwargs):
         """Apply sentencepiece subword encode to src & tgt."""
-        src_out = self._tokenize(example['src'], 'src', is_train)
-        tgt_out = self._tokenize(example['tgt'], 'tgt', is_train)
+        src_out, _ = self._tokenize(example['src'], 'src', is_train)
+        tgt_out, _ = self._tokenize(example['tgt'], 'tgt', is_train)
 
         if stats is not None:
             n_words = len(example['src']) + len(example['tgt'])

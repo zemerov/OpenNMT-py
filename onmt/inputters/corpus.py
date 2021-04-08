@@ -113,6 +113,7 @@ class ParallelCorpus(object):
         self.src = src
         self.tgt = tgt
         self.align = align
+        self.text = None
 
     def load(self, offset=0, stride=1):
         """
@@ -140,6 +141,20 @@ class ParallelCorpus(object):
         cls_name = type(self).__name__
         return '{}({}, {}, align={})'.format(
             cls_name, self.src, self.tgt, self.align)
+
+    def load_full_text(self):
+        if self.text is not None:
+            return
+
+        self.text = {'src': [], 'tgt': []}
+        for item in self.load():
+            self.text['src'].append(item['src'])
+            self.text['tgt'].append(item['tgt'])
+
+    def __call__(self, index):
+        assert self.text is None, "Please call .warm_up before calling ParallelCorpus object"
+
+        return self.text['src'][index], self.text['tgt'][index]
 
 
 def get_corpora(opts, is_train=False):
