@@ -110,7 +110,7 @@ def main(opt, fields, transforms_cls, checkpoint, device_id,
         save_checkpoint_steps=opt.save_checkpoint_steps,
         valid_iter=valid_iter,
         valid_steps=opt.valid_steps,
-        opts=opt
+#        opts=opt
     )
 
     if trainer.report_manager.tensorboard_writer is not None:
