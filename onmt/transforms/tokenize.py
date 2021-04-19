@@ -252,14 +252,12 @@ class BpeDropoutTransform(TokenizerTransform):
             segmented, used_merges = tokenize_text(self.tables[side], tokens, dropout_table=dropout_table)
         else:
             # alpha should be 0.0 < alpha < 1.0
-            print("Tokenization with dropout rate", alpha)
             segmented, used_merges = tokenize_text(
                 self.tables[side],
                 tokens,
                 dropout=alpha,
                 dropout_table=dropout_table
             )
-            print(segmented)
 
         return segmented, used_merges
 
