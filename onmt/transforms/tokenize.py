@@ -245,8 +245,22 @@ class BpeDropoutTransform(TokenizerTransform):
         :params tokens: list of str - list of words for tokenization
         """
 
-        # TODO make support for merge indexes and custom alpha rate
-        segmented, used_merges = tokenize_text(self.tables[side], tokens, dropout_table=dropout_table)
+        alpha = self.tgt_subword_alpha if side == 'tgt' else \
+            self.src_subword_alpha
+        if is_train is False:
+            # derterministic subwording
+            segmented, used_merges = tokenize_text(self.tables[side], tokens, dropout_table=dropout_table)
+        else:
+            # alpha should be 0.0 < alpha < 1.0
+            print("Tokenization with dropout rate", alpha)
+            segmented, used_merges = tokenize_text(
+                self.tables[side],
+                tokens,
+                dropout=alpha,
+                dropout_table=dropout_table
+            )
+            print(segmented)
+
         return segmented, used_merges
 
     def apply(self, example, is_train=False, stats=None, merge_tables=None, **kwargs):
