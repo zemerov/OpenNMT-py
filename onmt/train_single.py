@@ -104,13 +104,16 @@ def main(opt, fields, transforms_cls, checkpoint, device_id,
         logger.warning("Option single_pass is enabled, ignoring train_steps.")
         train_steps = 0
 
+    opt.variational = True if opt.variational.lower() == 'true' else False
+    opt.only_src = True if opt.only_src.lower() == 'true' else False
+
     trainer.train(
         train_iter,
         train_steps,
         save_checkpoint_steps=opt.save_checkpoint_steps,
         valid_iter=valid_iter,
         valid_steps=opt.valid_steps,
-#        opts=opt
+        opts=opt
     )
 
     if trainer.report_manager.tensorboard_writer is not None:

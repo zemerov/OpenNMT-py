@@ -152,7 +152,7 @@ class ParallelCorpus(object):
             self.text['tgt'].append(item['tgt'])
 
     def __call__(self, index):
-        assert self.text is None, "Please call .warm_up before calling ParallelCorpus object"
+        assert self.text is not None, "Please call .load_full_text before calling ParallelCorpus object"
 
         return self.text['src'][index], self.text['tgt'][index]
 

@@ -81,11 +81,11 @@ class TokenizerTransform(Transform):
 
         # variational arguments
         group.add('-variational', '--variational',
-                  type=bool, default=False,
+                  type=str, default='False',
                   help="Variational or usual bpe training")
 
         group.add('-only_src', '--only_src',
-                  type=bool, default=False,
+                  type=str, default='False',
                   help="Apply dropout only for src text or for both")
 
         group.add('-variational_lr', '--variational_lr',
@@ -244,6 +244,9 @@ class BpeDropoutTransform(TokenizerTransform):
         Do sentencepiece subword tokenize.
         :params tokens: list of str - list of words for tokenization
         """
+        if dropout_table is not None:
+            assert dropout_table.shape[0] == len(self.tables[side]), "Dropout table size and merge " \
+                                                                     "table size should match"
 
         alpha = self.tgt_subword_alpha if side == 'tgt' else \
             self.src_subword_alpha
