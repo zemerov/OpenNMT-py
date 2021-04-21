@@ -94,15 +94,16 @@ class TransformerDropProba(nn.Module):
         :return: probabilities: torch.FloatTensor [batch_size, merge_table_size]
         """
 
+        # TODO make value head correct prediction
         logits = self.model(batch, return_dict=True)['logits']  # [batch_size, merge_table_size]
-        value = self.value_head(self.nonlinear(logits))  # [batch_size, 1]
+        #value = self.value_head(self.nonlinear(logits))  # [batch_size, 1]
 
-        return self.sigmoid(logits), value  # Possibly value.squeeze()
+        return self.sigmoid(logits), 0, #value  # Possibly value.squeeze()
 
     def initialize_weight(self, desired_proba=0.1):
         print("Initial probability distribution set to {}".format(desired_proba))
         assert 1 > desired_proba > 0, "desired_proba should be in (0, 1)"
-        assert False, "This method is not implemented yet"
+        raise NotImplementedError("This method is not implemented yet")
 
         #TODO make it correct
         self.projection.weight.data.fill_(0)  # Set all weights to zero

@@ -14,6 +14,11 @@ import traceback
 
 import onmt.utils
 from onmt.utils.logging import logger
+from onmt.transforms.tokenize import BpeDropoutTransform
+from onmt.inputters.corpus import ParallelCorpus
+
+from onmt.variational.models import TransformerDropProba
+from onmt.variational.var_loss import variational_translation_loss
 
 
 def build_trainer(opt, device_id, model, fields, optim, model_saver=None):
@@ -70,7 +75,8 @@ def build_trainer(opt, device_id, model, fields, optim, model_saver=None):
                            model_dtype=opt.model_dtype,
                            earlystopper=earlystopper,
                            dropout=dropout,
-                           dropout_steps=dropout_steps)
+                           dropout_steps=dropout_steps,
+                           fields=dict(fields))
     return trainer
 
 
@@ -107,7 +113,7 @@ class Trainer(object):
                  n_gpu=1, gpu_rank=1, gpu_verbose_level=0,
                  report_manager=None, with_align=False, model_saver=None,
                  average_decay=0, average_every=1, model_dtype='fp32',
-                 earlystopper=None, dropout=[0.3], dropout_steps=[0]):
+                 earlystopper=None, dropout=[0.3], dropout_steps=[0], fields=None):
         # Basic attributes.
         self.model = model
         self.train_loss = train_loss
@@ -132,6 +138,7 @@ class Trainer(object):
         self.earlystopper = earlystopper
         self.dropout = dropout
         self.dropout_steps = dropout_steps
+        self.fields = fields
 
         for i in range(len(self.accum_count_l)):
             assert self.accum_count_l[i] > 0
@@ -195,7 +202,9 @@ class Trainer(object):
               train_steps,
               save_checkpoint_steps=5000,
               valid_iter=None,
-              valid_steps=10000):
+              valid_steps=10000,
+              opts=None
+              ):
         """
         The main training loop by iterating over `train_iter` and possibly
         running validation on `valid_iter`.
@@ -220,7 +229,53 @@ class Trainer(object):
         total_stats = onmt.utils.Statistics()
         report_stats = onmt.utils.Statistics()
         self._start_report_manager(start_time=total_stats.start_time)
-        print("TRAINING STARTED")
+
+        # ============================ VARIATIONAL BPE DROPOUT ========================================
+        if opts.variational:
+            # Create custom tokenizer, corpus
+            logger.info("Creating staff for variational train!")
+
+            variational_transform = BpeDropoutTransform(opts)
+            variational_transform.warm_up()
+
+            corpus = ParallelCorpus('', opts.data['iwslt']['path_src'], opts.data['iwslt']['path_tgt'])
+            corpus.load_full_text()
+
+            src_pad_idx = self.fields['src'].base_field.vocab.stoi[self.fields['src'].base_field.pad_token]
+            tgt_pad_idx = self.fields['tgt'].base_field.vocab.stoi[self.fields['tgt'].base_field.pad_token]
+
+            # TODO add initial probability distribution for merge models
+            if self.gpu_rank != -1:
+                device = torch.device("cuda", self.gpu_rank)
+            else:
+                device = torch.device("cpu")
+
+            src_merge_model = TransformerDropProba(
+                merge_table_size=len(variational_transform.tables['src']),
+                vocab_size=len(self.fields['src'].base_field.vocab.stoi),
+                max_seq_len=256,
+                pad_id=src_pad_idx,
+                device=device
+            )
+            src_merge_optimizer = torch.optim.Adam(src_merge_model.parameters(), lr=opts.variational_lr)
+
+            tgt_merge_model = TransformerDropProba(
+                merge_table_size=len(variational_transform.tables['tgt']),
+                vocab_size=len(self.fields['tgt'].base_field.vocab.stoi),
+                max_seq_len=256,
+                pad_id=tgt_pad_idx,
+                device=device
+            )
+            tgt_merge_optimizer = torch.optim.Adam(tgt_merge_model.parameters(), lr=opts.variational_lr)
+
+            variational_staff = {
+                'src_optim': src_merge_optimizer,
+                'tgt_optim': tgt_merge_optimizer,
+                'tokenizer': variational_transform,
+                'src_model': src_merge_model,
+                'tgt_model': tgt_merge_model,
+                'corpus': corpus
+            }  # Fill it with objects
 
         for i, (batches, normalization) in enumerate(
                 self._accum_batches(train_iter)):  #Loading dataset here
@@ -240,9 +295,15 @@ class Trainer(object):
                                     .all_gather_list
                                     (normalization))
 
-            self._gradient_accumulation(
-                batches, normalization, total_stats,
-                report_stats)  # Forward and backward pass
+            if opts.variational:  # Variational forward and backward pass
+                self._gradient_accumulation(
+                    batches, normalization, total_stats,
+                    report_stats,
+                    opts=opts, variational_staff=variational_staff, fields=train_iter.iterable.fields)
+            else:  # General forward and backward pass
+                self._gradient_accumulation(
+                    batches, normalization, total_stats,
+                    report_stats)  # Forward and backward pass
 
             if self.average_decay > 0 and i % self.average_every == 0:
                 self._update_average(step)
@@ -335,11 +396,12 @@ class Trainer(object):
         return stats
 
     def _gradient_accumulation(self, true_batches, normalization, total_stats,
-                               report_stats):
+                               report_stats, opts=None, variational_staff=None, fields=None):
         if self.accum_count > 1:
             self.optim.zero_grad()
 
         for k, batch in enumerate(true_batches):
+            # [seq_len, batch_size, 1]
             target_size = batch.tgt.size(0)
             # Truncated BPTT: reminder not compatible with accum > 1
             if self.trunc_size:
@@ -354,6 +416,7 @@ class Trainer(object):
 
             tgt_outer = batch.tgt
 
+            current_device = batch.src[0].device
             bptt = False
             for j in range(0, target_size - 1, trunc_size):
                 # 1. Create truncated target.
@@ -362,6 +425,67 @@ class Trainer(object):
                 # 2. F-prop all but generator.
                 if self.accum_count == 1:
                     self.optim.zero_grad()
+
+                # VAR0. Zero grads for variational model
+                variational_staff['src_optim'].zero_grad()
+
+                if not opts.only_src:
+                    variational_staff['tgt_optim'].zero_grad()
+
+                if opts.variational:
+                    # VAR1. Get merge table dropout probabilities
+                    hf_src = src.squeeze(2).transpose(0, 1)
+                    hf_tgt = tgt.squeeze(2).transpose(0, 1)
+
+                    src_probabilities, src_value = variational_staff['src_model'](hf_src)
+
+                    if not opts.only_src:
+                        tgt_probabilities, tgt_value = variational_staff['tgt_model'](hf_tgt)
+
+                    # VAR2. Retokenize sentences
+
+                    plain_text = {'src': [], 'tgt': []}
+                    used_merges = {'src': [[], []], 'tgt': [[], []]}
+                    for i, sentence_index in enumerate(batch.indices):
+                        src_plain_text, tgt_plain_text = variational_staff['corpus'](sentence_index)
+
+                        tokenized, sentence_used_merges = variational_staff['tokenizer']._tokenize(
+                                src_plain_text.split(),
+                                side='src',
+                                is_train=False,
+                                dropout_table=src_probabilities[i]
+                            )
+
+                        plain_text['src'].append([tokenized])
+                        used_merges['src'][0].append(torch.from_numpy(sentence_used_merges[0]))
+                        used_merges['src'][1].append(torch.from_numpy(sentence_used_merges[1]))
+
+                        if not opts.only_src:
+                            tokenized, sentence_used_merges = variational_staff['tokenizer']._tokenize(
+                                    tgt_plain_text.split(),
+                                    side='tgt',
+                                    is_train=True,
+                                    dropout_table=tgt_probabilities[i]
+                                )
+                            plain_text['tgt'].append([tokenized])
+
+                            used_merges['tgt'][0].append(torch.from_numpy(sentence_used_merges[0]))
+                            used_merges['tgt'][1].append(torch.from_numpy(sentence_used_merges[1]))
+
+                    # VAR3. Get tensors of indexes
+                    src_, src_lengths = fields['src'].process(plain_text['src'], device=current_device)
+                    tgt_ = fields['tgt'].process(plain_text['tgt'], device=current_device)
+
+                    src, tgt = src_, tgt_
+                    batch.src = src_
+                    batch.tgt = tgt_
+
+                    used_merges['src'][0] = torch.stack(used_merges['src'][0]).to(current_device)
+                    used_merges['src'][1] = torch.stack(used_merges['src'][1]).to(current_device)
+
+                    if not opts.only_src:
+                        used_merges['tgt'][0] = torch.stack(used_merges['tgt'][0]).to(current_device)
+                        used_merges['tgt'][1] = torch.stack(used_merges['tgt'][1]).to(current_device)
 
                 with torch.cuda.amp.autocast(enabled=self.optim.amp):
                     outputs, attns = self.model(
@@ -379,9 +503,24 @@ class Trainer(object):
                         trunc_start=j,
                         trunc_size=trunc_size)
 
+                    # VAR4. Compute variational loss
+                    rl_loss, src_kl_loss, tgt_kl_loss = variational_translation_loss(
+                        src_drops_proba=src_probabilities,
+                        tgt_drops_proba=tgt_probabilities,
+                        src_possible_merges=used_merges['src'],
+                        tgt_possible_merges=used_merges['tgt'],
+                        prior_proba=0.1  # TODO make it as an argument
+                    )
+
                 try:
                     if loss is not None:
                         self.optim.backward(loss)
+
+                    # VAR5. Variational models backward
+                    variational_loss = (-(loss.detach() * rl_loss - src_kl_loss - tgt_kl_loss)).mean()
+
+                    if variational_loss is not None:
+                        variational_loss.backward()
 
                     total_stats.update(batch_stats)
                     report_stats.update(batch_stats)
@@ -391,7 +530,7 @@ class Trainer(object):
                     logger.info("At step %d, we removed a batch - accum %d",
                                 self.optim.training_step, k)
 
-                # 4. Update the parameters and statistics.
+                # 4. Update the parameters and statistics.  Not supported by variational train
                 if self.accum_count == 1:
                     # Multi GPU gradient gather
                     if self.n_gpu > 1:
@@ -401,6 +540,13 @@ class Trainer(object):
                         onmt.utils.distributed.all_reduce_and_rescale_tensors(
                             grads, float(1))
                     self.optim.step()
+
+                # VAR5. Variational optimizers step
+                if opts.variational:
+                    variational_staff['src_optim'].step()
+
+                    if not opts.only_src:
+                        variational_staff['tgt_optim'].step()
 
                 # If truncated, don't backprop fully.
                 # TO CHECK
