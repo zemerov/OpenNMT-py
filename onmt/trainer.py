@@ -20,6 +20,7 @@ from onmt.inputters.corpus import ParallelCorpus
 from onmt.variational.models import TransformerDropProba
 from onmt.variational.var_loss import variational_translation_loss
 
+import wandb
 
 def build_trainer(opt, device_id, model, fields, optim, model_saver=None):
     """
@@ -518,6 +519,15 @@ class Trainer(object):
 
                     # VAR5. Variational models backward
                     variational_loss = (-(loss.detach() * rl_loss - src_kl_loss - tgt_kl_loss)).mean()
+
+                    wandb.log(
+                        {
+                            'variational_loss': variational_loss.item(),
+                            'usual_loss': loss.item(),
+                            'mean_dropout_src_proba': (1 - src_probabilities).mean().item(),
+                            'mean_dropout_tgt_proba': (1 - tgt_probabilities).mean().item()
+                        }
+                    )
 
                     if variational_loss is not None:
                         variational_loss.backward()
