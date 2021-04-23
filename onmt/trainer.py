@@ -382,7 +382,8 @@ class Trainer(object):
                                                  with_align=self.with_align)
 
                     # Compute loss.
-                    _, batch_stats = self.valid_loss(batch, outputs, attns)
+                    valid_loss, batch_stats = self.valid_loss(batch, outputs, attns)
+                    wandb.log({'validation_loss': valid_loss.item()})
 
                 # Update statistics.
                 stats.update(batch_stats)
@@ -520,10 +521,11 @@ class Trainer(object):
                     # VAR5. Variational models backward
                     variational_loss = (-(loss.detach() * rl_loss - src_kl_loss - tgt_kl_loss)).mean()
 
+
                     wandb.log(
                         {
                             'variational_loss': variational_loss.item(),
-                            'usual_loss': loss.item(),
+                            'train_loss': loss.item(),
                             'mean_dropout_src_proba': (1 - src_probabilities).mean().item(),
                             'mean_dropout_tgt_proba': (1 - tgt_probabilities).mean().item()
                         }
