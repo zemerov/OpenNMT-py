@@ -416,10 +416,11 @@ class Trainer(object):
             if src_lengths is not None:
                 report_stats.n_src_words += src_lengths.sum().item()
 
-            tgt_outer = batch.tgt
+            tgt_outer = batch.tgt  # TODO Change it to the correct output
 
             current_device = batch.src[0].device
             bptt = False
+            # TODO make here all variational transformations
             for j in range(0, target_size - 1, trunc_size):
                 # 1. Create truncated target.
                 tgt = tgt_outer[j: j + trunc_size]
@@ -481,6 +482,7 @@ class Trainer(object):
                     src, tgt = src_, tgt_
                     batch.src = src_
                     batch.tgt = tgt_
+                    trunc_size = tgt.shape[0]
 
                     used_merges['src'][0] = torch.stack(used_merges['src'][0]).to(current_device)
                     used_merges['src'][1] = torch.stack(used_merges['src'][1]).to(current_device)
