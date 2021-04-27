@@ -92,6 +92,19 @@ class TokenizerTransform(Transform):
                   type=float, default=1e-3,
                   help="Learning rate for variational model optimizer")
 
+        group.add('-kl_coeff', '--kl_coeff',
+                  type=float, default=1.,
+                  help="Coefficient for KL in variational loss")
+
+        group.add('-src_init_proba', '--src_init_proba',
+                  type=float, default=0.2,
+                  help="Initialization for src proba model")
+
+        group.add('-tgt_init_proba', '--tgt_init_proba',
+                  type=float, default=0.2,
+                  help="Initialization for tgt proba model")
+
+
     @classmethod
     def _validate_options(cls, opts):
         """Extra checks for Subword options."""

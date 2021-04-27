@@ -21,7 +21,8 @@ def variational_translation_loss(
         src_possible_merges: (torch.FloatTensor, torch.FloatTensor),
         tgt_possible_merges: (torch.FloatTensor, torch.FloatTensor),
         kl_coeff: float = 1,
-        prior_proba: float = None,
+        src_prior_proba: float = None,
+        tgt_prior_proba: float = None
 ) -> (torch.FloatTensor, torch.FloatTensor, torch.FloatTensor):
     # Invert tensor to get probability of skipping merge.
     # It needs because initially drops_proba is a tensor of leaving merge probabilities
@@ -42,8 +43,8 @@ def variational_translation_loss(
             tgt_used_per_id * torch.log(torch.clamp(1 - tgt_drops_proba, min=1e-8))
     ).sum(dim=1)
 
-    src_kl_loss = calculate_kl(src_drops_proba, prior_proba=prior_proba, kl_coeff=kl_coeff)
+    src_kl_loss = calculate_kl(src_drops_proba, prior_proba=src_prior_proba, kl_coeff=kl_coeff)
 
-    tgt_kl_loss = calculate_kl(tgt_drops_proba, prior_proba=prior_proba, kl_coeff=kl_coeff)
+    tgt_kl_loss = calculate_kl(tgt_drops_proba, prior_proba=tgt_prior_proba, kl_coeff=kl_coeff)
 
     return rl_loss, src_kl_loss, tgt_kl_loss

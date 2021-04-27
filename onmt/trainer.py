@@ -245,7 +245,6 @@ class Trainer(object):
             src_pad_idx = self.fields['src'].base_field.vocab.stoi[self.fields['src'].base_field.pad_token]
             tgt_pad_idx = self.fields['tgt'].base_field.vocab.stoi[self.fields['tgt'].base_field.pad_token]
 
-            # TODO add initial probability distribution for merge models
             if self.gpu_rank != -1:
                 device = torch.device("cuda", self.gpu_rank)
             else:
@@ -258,6 +257,7 @@ class Trainer(object):
                 pad_id=src_pad_idx,
                 device=device
             )
+            src_merge_model.initialize_weight(opts.src_init_proba, logger=logger)
             src_merge_optimizer = torch.optim.Adam(src_merge_model.parameters(), lr=opts.variational_lr)
 
             tgt_merge_model = TransformerDropProba(
@@ -267,6 +267,7 @@ class Trainer(object):
                 pad_id=tgt_pad_idx,
                 device=device
             )
+            tgt_merge_model.initialize_weight(opts.tgt_init_proba, logger=logger)
             tgt_merge_optimizer = torch.optim.Adam(tgt_merge_model.parameters(), lr=opts.variational_lr)
 
             variational_staff = {
@@ -297,10 +298,19 @@ class Trainer(object):
                                     (normalization))
 
             if opts.variational:  # Variational forward and backward pass
+                loss_opts = {
+                    "src_prior_proba": opts.src_subword_alpha,
+                    "tgt_prior_proba": opts.tgt_subword_alpha,
+                    "kl_coeff": opts.kl_coeff
+                }
                 self._gradient_accumulation(
                     batches, normalization, total_stats,
                     report_stats,
-                    opts=opts, variational_staff=variational_staff, fields=train_iter.iterable.fields)
+                    opts=opts,
+                    variational_staff=variational_staff,
+                    fields=train_iter.iterable.fields,
+                    loss_opts=loss_opts
+                )
             else:  # General forward and backward pass
                 self._gradient_accumulation(
                     batches, normalization, total_stats,
@@ -383,7 +393,6 @@ class Trainer(object):
 
                     # Compute loss.
                     valid_loss, batch_stats = self.valid_loss(batch, outputs, attns)
-                    wandb.log({'validation_loss': valid_loss.item()})
 
                 # Update statistics.
                 stats.update(batch_stats)
@@ -395,10 +404,15 @@ class Trainer(object):
         # Set model back to training mode.
         valid_model.train()
 
+        try:
+            wandb.log({"validation_loss": stats.loss})
+        except Exception:
+            pass
+
         return stats
 
     def _gradient_accumulation(self, true_batches, normalization, total_stats,
-                               report_stats, opts=None, variational_staff=None, fields=None):
+                               report_stats, opts=None, variational_staff=None, fields=None, loss_opts=None):
         if self.accum_count > 1:
             self.optim.zero_grad()
 
@@ -416,7 +430,7 @@ class Trainer(object):
             if src_lengths is not None:
                 report_stats.n_src_words += src_lengths.sum().item()
 
-            tgt_outer = batch.tgt  # TODO Change it to the correct output
+            tgt_outer = batch.tgt
 
             current_device = batch.src[0].device
             bptt = False
@@ -513,7 +527,9 @@ class Trainer(object):
                         tgt_drops_proba=tgt_probabilities,
                         src_possible_merges=used_merges['src'],
                         tgt_possible_merges=used_merges['tgt'],
-                        prior_proba=0.1  # TODO make it as an argument
+                        src_prior_proba=loss_opts['src_prior_proba'],
+                        tgt_prior_proba=loss_opts['tgt_prior_proba'],
+                        kl_coeff=loss_opts['kl_coeff']
                     )
 
                 try:
@@ -522,7 +538,7 @@ class Trainer(object):
 
                     # VAR5. Variational models backward
                     variational_loss = (-(loss.detach() * rl_loss - src_kl_loss - tgt_kl_loss)).mean()
-
+                    # TODO calculate value loss
 
                     wandb.log(
                         {
