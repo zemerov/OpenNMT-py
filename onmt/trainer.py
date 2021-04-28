@@ -299,8 +299,8 @@ class Trainer(object):
 
             if opts.variational:  # Variational forward and backward pass
                 loss_opts = {
-                    "src_prior_proba": opts.src_subword_alpha,
-                    "tgt_prior_proba": opts.tgt_subword_alpha,
+                    "src_prior_proba": opts.src_prior_proba,
+                    "tgt_prior_proba": opts.tgt_prior_proba,
                     "kl_coeff": opts.kl_coeff
                 }
                 self._gradient_accumulation(

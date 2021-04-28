@@ -104,6 +104,14 @@ class TokenizerTransform(Transform):
                   type=float, default=0.2,
                   help="Initialization for tgt proba model")
 
+        group.add('-src_prior_proba', '--src_prior_proba',
+                  type=float, default=0.2,
+                  help="Prior src proba for loss calculation")
+
+        group.add('-tgt_prior_proba', '--tgt_prior_proba',
+                  type=float, default=0.2,
+                  help="Prior tgt proba for loss calculation")
+
 
     @classmethod
     def _validate_options(cls, opts):
