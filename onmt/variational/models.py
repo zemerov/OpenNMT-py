@@ -29,9 +29,9 @@ class TransformerDropProba(nn.Module):
 
         self.model = BertModel(config).to(device)
 
-        self.policy_head = nn.Linear(hidden_size, merge_table_size)
+        self.policy_head = nn.Linear(hidden_size, merge_table_size).to(device)
         self.sigmoid = nn.Sigmoid()
-        self.value_head = nn.Linear(hidden_size, 1)
+        self.value_head = nn.Linear(hidden_size, 1).to(device)
 
     def forward(self, batch):
         """
