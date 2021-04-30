@@ -260,24 +260,28 @@ class Trainer(object):
             src_merge_model.initialize_weight(opts.src_init_proba, logger=logger)
             src_merge_optimizer = torch.optim.Adam(src_merge_model.parameters(), lr=opts.variational_lr)
 
-            tgt_merge_model = TransformerDropProba(
-                merge_table_size=len(variational_transform.tables['tgt']),
-                vocab_size=len(self.fields['tgt'].base_field.vocab.stoi),
-                max_seq_len=256,
-                pad_id=tgt_pad_idx,
-                device=device
-            )
-            tgt_merge_model.initialize_weight(opts.tgt_init_proba, logger=logger)
-            tgt_merge_optimizer = torch.optim.Adam(tgt_merge_model.parameters(), lr=opts.variational_lr)
-
             variational_staff = {
                 'src_optim': src_merge_optimizer,
-                'tgt_optim': tgt_merge_optimizer,
+                'tgt_optim': None,
                 'tokenizer': variational_transform,
                 'src_model': src_merge_model,
-                'tgt_model': tgt_merge_model,
-                'corpus': corpus
+                'tgt_model': None,
+                'corpus': corpus,
             }  # Fill it with objects
+
+            if not opts.only_src:
+                tgt_merge_model = TransformerDropProba(
+                    merge_table_size=len(variational_transform.tables['tgt']),
+                    vocab_size=len(self.fields['tgt'].base_field.vocab.stoi),
+                    max_seq_len=256,
+                    pad_id=tgt_pad_idx,
+                    device=device
+                )
+                tgt_merge_model.initialize_weight(opts.tgt_init_proba, logger=logger)
+                tgt_merge_optimizer = torch.optim.Adam(tgt_merge_model.parameters(), lr=opts.variational_lr)
+
+                variational_staff['tgt_optim'] = tgt_merge_optimizer
+                variational_staff['tgt_model'] = tgt_merge_model
 
         for i, (batches, normalization) in enumerate(
                 self._accum_batches(train_iter)):  #Loading dataset here
@@ -458,6 +462,8 @@ class Trainer(object):
 
                     if not opts.only_src:
                         tgt_probabilities, tgt_value = variational_staff['tgt_model'](hf_tgt)
+                    else:
+                        tgt_probabilities, tgt_value = None, None
 
                     # VAR2. Retokenize sentences
 
@@ -491,12 +497,17 @@ class Trainer(object):
 
                     # VAR3. Get tensors of indexes
                     src_, src_lengths = fields['src'].process(plain_text['src'], device=current_device)
-                    tgt_ = fields['tgt'].process(plain_text['tgt'], device=current_device)
 
-                    src, tgt = src_, tgt_
+                    if not opts.only_src:
+                        tgt_ = fields['tgt'].process(plain_text['tgt'], device=current_device)
+
+                        tgt = tgt_
+                        batch.tgt = tgt_
+
+                        trunc_size = tgt.shape[0]
+
+                    src = src_
                     batch.src = src_
-                    batch.tgt = tgt_
-                    trunc_size = tgt.shape[0]
 
                     used_merges['src'][0] = torch.stack(used_merges['src'][0]).to(current_device)
                     used_merges['src'][1] = torch.stack(used_merges['src'][1]).to(current_device)
@@ -529,7 +540,8 @@ class Trainer(object):
                         tgt_possible_merges=used_merges['tgt'],
                         src_prior_proba=loss_opts['src_prior_proba'],
                         tgt_prior_proba=loss_opts['tgt_prior_proba'],
-                        kl_coeff=loss_opts['kl_coeff']
+                        kl_coeff=loss_opts['kl_coeff'],
+                        only_src=opts.only_src
                     )
 
                 try:
@@ -537,15 +549,23 @@ class Trainer(object):
                         self.optim.backward(loss)
 
                     # VAR5. Variational models backward
-                    variational_loss = (-(loss.detach() * rl_loss - src_kl_loss - tgt_kl_loss)).mean()
+                    if opts.only_src:
+                        variational_loss = (-(loss.detach() * rl_loss - src_kl_loss)).mean()
+                    else:
+                        variational_loss = (-(loss.detach() * rl_loss - src_kl_loss - tgt_kl_loss)).mean()
                     # TODO calculate value loss
+
+                    if opts.only_src:
+                        mean_tgt_proba = 0
+                    else:
+                        mean_tgt_proba = (1 - tgt_probabilities).mean().item()
 
                     wandb.log(
                         {
                             'variational_loss': variational_loss.item(),
                             'train_loss': loss.item(),
                             'mean_dropout_src_proba': (1 - src_probabilities).mean().item(),
-                            'mean_dropout_tgt_proba': (1 - tgt_probabilities).mean().item()
+                            'mean_dropout_tgt_proba': mean_tgt_proba
                         }
                     )
 
