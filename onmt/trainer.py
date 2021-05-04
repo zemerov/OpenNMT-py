@@ -318,7 +318,7 @@ class Trainer(object):
             else:  # General forward and backward pass
                 self._gradient_accumulation(
                     batches, normalization, total_stats,
-                    report_stats)  # Forward and backward pass
+                    report_stats, opts=opts)  # Forward and backward pass
 
             if self.average_decay > 0 and i % self.average_every == 0:
                 self._update_average(step)
@@ -447,21 +447,22 @@ class Trainer(object):
                 if self.accum_count == 1:
                     self.optim.zero_grad()
 
-                # VAR0. Zero grads for variational model
-                variational_staff['src_optim'].zero_grad()
-
-                if not opts.only_src:
-                    variational_staff['tgt_optim'].zero_grad()
-
                 if opts.variational:
+                    # VAR0. Zero grads for variational model
+                    variational_staff['src_optim'].zero_grad()
+
+                    if not opts.only_src:
+                        variational_staff['tgt_optim'].zero_grad()
+
                     # VAR1. Get merge table dropout probabilities
                     hf_src = src.squeeze(2).transpose(0, 1)
                     hf_tgt = tgt.squeeze(2).transpose(0, 1)
 
                     src_probabilities, src_value = variational_staff['src_model'](hf_src)
+                    src_value = src_value.squeeze()
 
                     if not opts.only_src:
-                        tgt_probabilities, tgt_value = variational_staff['tgt_model'](hf_tgt)
+                        tgt_probabilities, _ = variational_staff['tgt_model'](hf_tgt)
                     else:
                         tgt_probabilities, tgt_value = None, None
 
@@ -521,9 +522,8 @@ class Trainer(object):
                         src, tgt, src_lengths, bptt=bptt,
                         with_align=self.with_align)
                     bptt = True
-
                     # 3. Compute loss.
-                    loss, batch_stats = self.train_loss(
+                    loss, batch_stats, var_loss = self.train_loss(
                         batch,
                         outputs,
                         attns,
@@ -532,42 +532,57 @@ class Trainer(object):
                         trunc_start=j,
                         trunc_size=trunc_size)
 
-                    # VAR4. Compute variational loss
-                    rl_loss, src_kl_loss, tgt_kl_loss = variational_translation_loss(
-                        src_drops_proba=src_probabilities,
-                        tgt_drops_proba=tgt_probabilities,
-                        src_possible_merges=used_merges['src'],
-                        tgt_possible_merges=used_merges['tgt'],
-                        src_prior_proba=loss_opts['src_prior_proba'],
-                        tgt_prior_proba=loss_opts['tgt_prior_proba'],
-                        kl_coeff=loss_opts['kl_coeff'],
-                        only_src=opts.only_src
-                    )
+                    var_loss = var_loss.view(src.shape[1], -1).sum(dim=1)
+
+                    if opts.variational:
+                        # VAR4. Compute variational loss
+                        rl_loss, src_kl_loss, tgt_kl_loss = variational_translation_loss(
+                            src_drops_proba=src_probabilities,
+                            tgt_drops_proba=tgt_probabilities,
+                            src_possible_merges=used_merges['src'],
+                            tgt_possible_merges=used_merges['tgt'],
+                            src_prior_proba=loss_opts['src_prior_proba'],
+                            tgt_prior_proba=loss_opts['tgt_prior_proba'],
+                            kl_coeff=loss_opts['kl_coeff'],
+                            only_src=opts.only_src
+                        )
 
                 try:
                     if loss is not None:
                         self.optim.backward(loss)
 
-                    # VAR5. Variational models backward
-                    if opts.only_src:
-                        variational_loss = (-(loss.detach() * rl_loss - src_kl_loss)).mean()
-                    else:
-                        variational_loss = (-(loss.detach() * rl_loss - src_kl_loss - tgt_kl_loss)).mean()
-                    # TODO calculate value loss
+                    if opts.variational:
+                        # VAR5. Variational models backward
+                        assert var_loss.shape == src_value.shape, \
+                            "Shapes of value and var_loss should match. Got {} and {} instead.".format(var_loss.shape, src_value.shape)
 
-                    if opts.only_src:
-                        mean_tgt_proba = 0
-                    else:
-                        mean_tgt_proba = (1 - tgt_probabilities).mean().item()
+                        if opts.only_src:
+                            variational_loss = (-((var_loss.detach() - src_value) * rl_loss - src_kl_loss)).mean()
+                        else:
+                            variational_loss = (-((var_loss.detach() - src_value) * rl_loss - src_kl_loss - tgt_kl_loss)).mean()
 
-                    wandb.log(
-                        {
-                            'variational_loss': variational_loss.item(),
-                            'train_loss': loss.item(),
-                            'mean_dropout_src_proba': (1 - src_probabilities).mean().item(),
-                            'mean_dropout_tgt_proba': mean_tgt_proba
-                        }
-                    )
+                        value_loss = ((var_loss - src_value)**2).mean()
+                        variational_loss += value_loss
+
+                        if opts.only_src:
+                            mean_tgt_proba = 0
+                        else:
+                            mean_tgt_proba = (1 - tgt_probabilities).mean().item()
+
+                        wandb.log(
+                            {
+                                'variational_loss': variational_loss.item(),
+                                'train_loss': loss.item(),
+                                'value_loss': value_loss.item(),
+                                'mean_dropout_src_proba': (1 - src_probabilities).mean().item(),
+                                'mean_dropout_tgt_proba': mean_tgt_proba
+                            }
+                        )
+                    else:
+                        wandb.log(
+                            {'train_loss': loss.item()}
+                        )
+                        variational_loss = None
 
                     if variational_loss is not None:
                         variational_loss.backward()

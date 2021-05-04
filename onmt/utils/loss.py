@@ -189,8 +189,8 @@ class LossComputeBase(nn.Module):
         trunc_range = (trunc_start, trunc_start + trunc_size)
         shard_state = self._make_shard_state(batch, output, trunc_range, attns)
         if shard_size == 0:
-            loss, stats = self._compute_loss(batch, **shard_state)
-            return loss / float(normalization), stats
+            loss, stats, var_loss = self._compute_loss(batch, **shard_state)
+            return loss / float(normalization), stats, var_loss
         batch_stats = onmt.utils.Statistics()
         for shard in shards(shard_state, shard_size):
             loss, stats = self._compute_loss(batch, **shard)
@@ -241,14 +241,16 @@ class LabelSmoothingLoss(nn.Module):
 
     def forward(self, output, target):
         """
-        output (FloatTensor): batch_size x n_classes
+        output (FloatTensor): batch_size x n_classes. Log soft max
         target (LongTensor): batch_size
         """
         model_prob = self.one_hot.repeat(target.size(0), 1)
         model_prob.scatter_(1, target.unsqueeze(1), self.confidence)
         model_prob.masked_fill_((target == self.ignore_index).unsqueeze(1), 0)
 
-        return F.kl_div(output, model_prob, reduction='sum')
+        kl_div = F.kl_div(output, model_prob, reduction='none')
+
+        return kl_div.sum(), kl_div.sum(dim=1).detach()
 
 
 class CommonLossCompute(LossComputeBase):
@@ -288,7 +290,7 @@ class CommonLossCompute(LossComputeBase):
         scores = self.generator(bottled_output)
         gtruth = target.view(-1)
 
-        loss = self.criterion(scores, gtruth)
+        loss, var_loss = self.criterion(scores, gtruth)
         if self.lambda_coverage != 0.0:
             coverage_loss = self._compute_coverage_loss(
                 std_attn=std_attn, coverage_attn=coverage_attn)
@@ -302,8 +304,7 @@ class CommonLossCompute(LossComputeBase):
                 align_head=align_head, ref_align=ref_align)
             loss += align_loss
         stats = self._stats(loss.clone(), scores, gtruth)
-
-        return loss, stats
+        return loss, stats, var_loss
 
     def _compute_coverage_loss(self, std_attn, coverage_attn):
         covloss = torch.min(std_attn, coverage_attn).sum()
