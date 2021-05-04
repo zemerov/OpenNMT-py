@@ -561,7 +561,7 @@ class Trainer(object):
                         else:
                             variational_loss = (-((var_loss.detach() - src_value) * rl_loss - src_kl_loss - tgt_kl_loss)).mean()
 
-                        value_loss = ((var_loss - src_value)**2).mean()
+                        value_loss = ((var_loss - src_value)**2).mean().sqrt()
                         variational_loss += value_loss
 
                         if opts.only_src:
