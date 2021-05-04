@@ -31,7 +31,11 @@ class TransformerDropProba(nn.Module):
 
         self.policy_head = nn.Linear(hidden_size, merge_table_size).to(device)
         self.sigmoid = nn.Sigmoid()
-        self.value_head = nn.Linear(hidden_size, 1).to(device)
+        self.value_head = nn.Sequential(
+            nn.Linear(hidden_size, hidden_size),
+            nn.LeakyReLU(0.2),
+            nn.Linear(hidden_size, 1)
+        ).to(device)
 
     def forward(self, batch):
         """
