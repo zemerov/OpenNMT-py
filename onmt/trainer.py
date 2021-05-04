@@ -53,7 +53,7 @@ def build_trainer(opt, device_id, model, fields, optim, model_saver=None):
     dropout = opt.dropout
     dropout_steps = opt.dropout_steps
     if device_id >= 0:
-        gpu_rank = opt.gpu_ranks[device_id]
+        gpu_rank = device_id
     else:
         gpu_rank = -1
         n_gpu = 0

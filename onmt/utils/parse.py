@@ -274,9 +274,9 @@ class ArgumentParser(cfargparse.ArgumentParser, DataOptsCheckerMixin):
                   "than -world_size.")
         if opt.world_size == len(opt.gpu_ranks) and \
                 min(opt.gpu_ranks) > 0:
-            raise AssertionError(
-                  "-gpu_ranks should have master(=0) rank "
-                  "unless -world_size is greater than len(gpu_ranks).")
+            pass #raise AssertionError(
+                 # "-gpu_ranks should have master(=0) rank "
+                 # "unless -world_size is greater than len(gpu_ranks).")
 
         assert len(opt.dropout) == len(opt.dropout_steps), \
             "Number of dropout values must match accum_steps values"

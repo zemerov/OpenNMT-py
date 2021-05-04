@@ -152,7 +152,7 @@ def train(opt):
 
     elif nb_gpu == 1:  # case 1 GPU only
         # TODO make possible for custom GPU id. Also replace assert at utils/parse.py line 275
-        train_process(opt, device_id=0)
+        train_process(opt, device_id=opt.gpu_ranks[0])
     else:   # case only CPU
         train_process(opt, device_id=-1)
 
