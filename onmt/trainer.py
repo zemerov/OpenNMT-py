@@ -555,14 +555,14 @@ class Trainer(object):
                         # VAR5. Variational models backward
                         assert var_loss.shape == src_value.shape, \
                             "Shapes of value and var_loss should match. Got {} and {} instead.".format(var_loss.shape, src_value.shape)
-
+                        mean_var = var_loss.detach().mean()
                         if opts.only_src:
-                            variational_loss = (-((var_loss.detach() - src_value) * rl_loss - src_kl_loss)).mean()
+                            variational_loss = (-((var_loss.detach() - mean_var) * rl_loss - src_kl_loss)).mean()
                         else:
-                            variational_loss = (-((var_loss.detach() - src_value) * rl_loss - src_kl_loss - tgt_kl_loss)).mean()
+                            variational_loss = (-((var_loss.detach() - mean_var) * rl_loss - src_kl_loss - tgt_kl_loss)).mean()
 
-                        value_loss = ((var_loss.detach() - src_value)**2).mean().sqrt()
-                        variational_loss += value_loss
+                        #value_loss = ((var_loss.detach() - src_value)**2).mean().sqrt()
+                        #variational_loss += value_loss
 
                         if opts.only_src:
                             mean_tgt_proba = 0
@@ -573,7 +573,7 @@ class Trainer(object):
                             {
                                 'variational_loss': variational_loss.item(),
                                 'train_loss': loss.item(),
-                                'value_loss': value_loss.item(),
+                                'value_loss': mean_var.item(),
                                 'mean_dropout_src_proba': (1 - src_probabilities).mean().item(),
                                 'mean_dropout_tgt_proba': mean_tgt_proba
                             }
