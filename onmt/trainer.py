@@ -532,7 +532,7 @@ class Trainer(object):
                         trunc_start=j,
                         trunc_size=trunc_size)
 
-                    var_loss = var_loss.view(src.shape[1], -1).sum(dim=1)
+                    var_loss = var_loss.view(src.shape[1], -1).mean(dim=1)
 
                     if opts.variational:
                         # VAR4. Compute variational loss
@@ -561,7 +561,7 @@ class Trainer(object):
                         else:
                             variational_loss = (-((var_loss.detach() - src_value) * rl_loss - src_kl_loss - tgt_kl_loss)).mean()
 
-                        value_loss = ((var_loss - src_value)**2).mean().sqrt()
+                        value_loss = ((var_loss.detach() - src_value)**2).mean().sqrt()
                         variational_loss += value_loss
 
                         if opts.only_src:
