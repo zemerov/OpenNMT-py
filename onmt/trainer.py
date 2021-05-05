@@ -396,7 +396,7 @@ class Trainer(object):
                                                  with_align=self.with_align)
 
                     # Compute loss.
-                    valid_loss, batch_stats = self.valid_loss(batch, outputs, attns)
+                    valid_loss, batch_stats, _ = self.valid_loss(batch, outputs, attns)
 
                 # Update statistics.
                 stats.update(batch_stats)

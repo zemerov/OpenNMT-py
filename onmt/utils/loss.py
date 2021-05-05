@@ -289,8 +289,11 @@ class CommonLossCompute(LossComputeBase):
 
         scores = self.generator(bottled_output)
         gtruth = target.view(-1)
-
-        loss, var_loss = self.criterion(scores, gtruth)
+        if isinstance(self.criterion, LabelSmoothingLoss):
+            loss, var_loss = self.criterion(scores, gtruth)
+        else:
+            loss = self.criterion(scores, gtruth)
+            var_loss = 0
         if self.lambda_coverage != 0.0:
             coverage_loss = self._compute_coverage_loss(
                 std_attn=std_attn, coverage_attn=coverage_attn)
