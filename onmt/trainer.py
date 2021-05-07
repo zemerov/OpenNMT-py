@@ -70,7 +70,7 @@ def build_trainer(opt, device_id, model, fields, optim, model_saver=None):
                            n_gpu, gpu_rank,
                            gpu_verbose_level, report_manager,
                            with_align=True if opt.lambda_align > 0 else False,
-                           model_saver=model_saver if gpu_rank <= 0 else None,
+                           model_saver=model_saver,
                            average_decay=average_decay,
                            average_every=average_every,
                            model_dtype=opt.model_dtype,
