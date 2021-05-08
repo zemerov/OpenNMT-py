@@ -11,7 +11,7 @@ def load_subword_nmt_table(path):
     cur_priority = 0
     with open(path) as f:
         for line in f:
-            if "#version" in line:
+            if "#version" in line or len(line.split()) == 1:
                 continue
             token_1, token_2 = line.rstrip("\n").split(" ")
             table[(token_1, token_2)] = int(cur_priority)
