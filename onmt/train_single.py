@@ -10,6 +10,7 @@ from onmt.trainer import build_trainer
 from onmt.models import build_model_saver
 from onmt.utils.logging import init_logger, logger
 from onmt.utils.parse import ArgumentParser
+from onmt.variational.builder import build_variational_staff
 
 from onmt.inputters.dynamic_iterator import build_dynamic_dataset_iter
 
@@ -107,13 +108,19 @@ def main(opt, fields, transforms_cls, checkpoint, device_id,
     opt.variational = True if opt.variational.lower() == 'true' else False
     opt.only_src = True if opt.only_src.lower() == 'true' else False
 
+    if opt.variational:
+        variational_staff = build_variational_staff(opt, fields, device_id)
+    else:
+        variational_staff = None
+
     trainer.train(
         train_iter,
         train_steps,
         save_checkpoint_steps=opt.save_checkpoint_steps,
         valid_iter=valid_iter,
         valid_steps=opt.valid_steps,
-        opts=opt
+        opts=opt,
+        variational_staff=variational_staff
     )
 
     if trainer.report_manager.tensorboard_writer is not None:

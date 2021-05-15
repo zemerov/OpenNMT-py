@@ -22,6 +22,7 @@ from onmt.variational.var_loss import variational_translation_loss
 
 import wandb
 
+
 def build_trainer(opt, device_id, model, fields, optim, model_saver=None):
     """
     Simplify `Trainer` creation based on user `opt`s*
@@ -204,7 +205,8 @@ class Trainer(object):
               save_checkpoint_steps=5000,
               valid_iter=None,
               valid_steps=10000,
-              opts=None
+              opts=None,
+              variational_staff=None
               ):
         """
         The main training loop by iterating over `train_iter` and possibly
@@ -217,6 +219,8 @@ class Trainer(object):
               iterations.
             valid_iter: A generator that returns the next validation batch.
             valid_steps: Run evaluation every this many iterations.
+            opts: config options
+            variational_staff: dict with object for variational training
 
         Returns:
             The gathered statistics.
@@ -232,58 +236,6 @@ class Trainer(object):
         self._start_report_manager(start_time=total_stats.start_time)
         src_merge_model = None
         tgt_merge_model = None
-
-        # ============================ VARIATIONAL BPE DROPOUT ========================================
-        if opts.variational:
-            # Create custom tokenizer, corpus
-            logger.info("Creating staff for variational train!")
-
-            variational_transform = BpeDropoutTransform(opts)
-            variational_transform.warm_up()
-
-            corpus = ParallelCorpus('', opts.data['iwslt']['path_src'], opts.data['iwslt']['path_tgt'])
-            corpus.load_full_text()
-
-            src_pad_idx = self.fields['src'].base_field.vocab.stoi[self.fields['src'].base_field.pad_token]
-            tgt_pad_idx = self.fields['tgt'].base_field.vocab.stoi[self.fields['tgt'].base_field.pad_token]
-
-            if self.gpu_rank != -1:
-                device = torch.device("cuda", self.gpu_rank)
-            else:
-                device = torch.device("cpu")
-
-            src_merge_model = TransformerDropProba(
-                merge_table_size=len(variational_transform.tables['src']),
-                vocab_size=len(self.fields['src'].base_field.vocab.stoi),
-                max_seq_len=256,
-                pad_id=src_pad_idx,
-                device=device
-            )
-            src_merge_model.initialize_weight(opts.src_init_proba, logger=logger)
-            src_merge_optimizer = torch.optim.Adam(src_merge_model.parameters(), lr=opts.variational_lr)
-
-            variational_staff = {
-                'src_optim': src_merge_optimizer,
-                'tgt_optim': None,
-                'tokenizer': variational_transform,
-                'src_model': src_merge_model,
-                'tgt_model': None,
-                'corpus': corpus,
-            }  # Fill it with objects
-
-            if not opts.only_src:
-                tgt_merge_model = TransformerDropProba(
-                    merge_table_size=len(variational_transform.tables['tgt']),
-                    vocab_size=len(self.fields['tgt'].base_field.vocab.stoi),
-                    max_seq_len=256,
-                    pad_id=tgt_pad_idx,
-                    device=device
-                )
-                tgt_merge_model.initialize_weight(opts.tgt_init_proba, logger=logger)
-                tgt_merge_optimizer = torch.optim.Adam(tgt_merge_model.parameters(), lr=opts.variational_lr)
-
-                variational_staff['tgt_optim'] = tgt_merge_optimizer
-                variational_staff['tgt_model'] = tgt_merge_model
 
         for i, (batches, normalization) in enumerate(
                 self._accum_batches(train_iter)):  #Loading dataset here
