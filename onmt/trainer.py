@@ -230,6 +230,8 @@ class Trainer(object):
         total_stats = onmt.utils.Statistics()
         report_stats = onmt.utils.Statistics()
         self._start_report_manager(start_time=total_stats.start_time)
+        src_merge_model = None
+        tgt_merge_model = None
 
         # ============================ VARIATIONAL BPE DROPOUT ========================================
         if opts.variational:
@@ -353,13 +355,23 @@ class Trainer(object):
             if (self.model_saver is not None
                     and (save_checkpoint_steps != 0
                          and step % save_checkpoint_steps == 0)):
-                self.model_saver.save(step, moving_average=self.moving_average)
+                self.model_saver.save(
+                    step,
+                    moving_average=self.moving_average,
+                    src_bpe_model=src_merge_model,  # None if not opts.variational
+                    tgt_bpe_model=tgt_merge_model  # None if not opts.variational or opts.only_src
+                )
 
             if train_steps > 0 and step >= train_steps:
                 break
 
         if self.model_saver is not None:
-            self.model_saver.save(step, moving_average=self.moving_average)
+            self.model_saver.save(
+                step,
+                moving_average=self.moving_average,
+                src_bpe_model=src_merge_model,  # None if not opts.variational
+                tgt_bpe_model=tgt_merge_model  # None if not opts.variational or opts.only_src
+            )
         return total_stats
 
     def validate(self, valid_iter, moving_average=None):

@@ -51,7 +51,7 @@ class ModelSaverBase(object):
         if keep_checkpoint > 0:
             self.checkpoint_queue = deque([], maxlen=keep_checkpoint)
 
-    def save(self, step, moving_average=None):
+    def save(self, step, moving_average=None, src_bpe_model=None, tgt_bpe_model=None):
         """Main entry point for model saver
 
         It wraps the `_save` method with checks and apply `keep_checkpoint`
@@ -82,6 +82,12 @@ class ModelSaverBase(object):
                 self._rm_checkpoint(todel)
             self.checkpoint_queue.append(chkpt_name)
 
+        if src_bpe_model is not None:
+            self._save_bpe_model(step, src_bpe_model, side='src')
+
+        if tgt_bpe_model is not None:
+            self._save_bpe_model(step, tgt_bpe_model, side='tgt')
+
     def _save(self, step, model):
         """Save a resumable checkpoint.
 
@@ -104,6 +110,13 @@ class ModelSaverBase(object):
         Args:
             name(str): name that indentifies the checkpoint
                 (it may be a filepath)
+        """
+
+        raise NotImplementedError()
+
+    def _save_bpe_model(self, step, model, side='src'):
+        """
+        Saving bpe dropout model on step
         """
 
         raise NotImplementedError()
@@ -148,3 +161,7 @@ class ModelSaver(ModelSaverBase):
     def _rm_checkpoint(self, name):
         if os.path.exists(name):
             os.remove(name)
+
+    def _save_bpe_model(self, step, model, side='src'):
+        path = self.base_path + "_" + side + "_bpe_step_{}.pt".format(step)
+        torch.save(model.state_dict(), path)
