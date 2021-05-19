@@ -234,8 +234,8 @@ class Trainer(object):
         total_stats = onmt.utils.Statistics()
         report_stats = onmt.utils.Statistics()
         self._start_report_manager(start_time=total_stats.start_time)
-        src_merge_model = None
-        tgt_merge_model = None
+        src_merge_model = None if variational_staff is None else variational_staff['src_model']
+        tgt_merge_model = None if variational_staff is None else variational_staff['tgt_model']
 
         for i, (batches, normalization) in enumerate(
                 self._accum_batches(train_iter)):  #Loading dataset here
